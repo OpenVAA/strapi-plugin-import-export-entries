@@ -28,10 +28,19 @@ const importData = async (dataRaw, { slug, format, user, idField }) => {
   let data = await parseInputData(format, dataRaw, { slug });
   data = toArray(data);
 
+  let importFunction;
+  if (slug === 'api::candidate.candidate') {
+    importFunction = async (datum) => await createOrUpdateCandidate(datum, { slug });
+  } else if (slug === 'api::nomination.nomination') {
+    importFunction = async (datum) => await createOrUpdateNomination(datum, { slug });
+  } else {
+    return { failures: ['Slug not supported'] };
+  }
+
   const results = [];
 
   for (const datum of data) {
-    results.push(await createCandidate(datum, { slug, user, idField }));
+    results.push(await importFunction(datum, { slug, user, idField }));
   }
 
   return { failures: [] };
@@ -91,23 +100,52 @@ const importOtherSlug = async (data, { slug, user, idField }) => {
   };
 };
 
-const createCandidate = async (data, { slug, user, idField }) => {
-  const relationName = 'api::candidate.candidate';
+const assertRequiredFields = (data, requiredFields) => {
+  const keys = Object.keys(data);
+  if (requiredFields.some((key) => !keys.includes(key))) {
+    throw new Error('Missing required field');
+  }
+};
+
+const createOrUpdateCandidate = async (data, { slug: relationName }) => {
+  assertRequiredFields(data, ['firstName', 'lastName', 'party', 'email', 'published']);
 
   const publishedAt = data.published === 'true' ? new Date() : undefined;
 
-  let [candidate] = await strapi.db.query(relationName).findMany({ where: { email: data.email } });
+  const where = { email: data.email };
+
+  let [candidate] = await strapi.db.query(relationName).findMany({ where });
 
   if (!candidate) {
     candidate = await strapi.db.query(relationName).create({ data: { ...data, publishedAt } });
   } else {
-    // Don't do anything
-    /*
-    candidate = await strapi.db.query(relationName).update({ where: { id: candidate.id }, data: { ...data, publishedAt } });
-    */
+    candidate = await strapi.db.query(relationName).update({ where, data: { ...data, publishedAt } });
   }
 
   return candidate;
+};
+
+const createOrUpdateNomination = async (data, { slug: relationName }) => {
+  assertRequiredFields(data, ['election', 'constituency', 'candidate', 'party', 'electionSymbol', 'published']);
+
+  const publishedAt = data.published === 'true' ? new Date() : undefined;
+
+  const where = {
+    election: data.election,
+    constituency: data.constituency,
+    candidate: data.candidate,
+    party: data.party,
+  };
+
+  let [nomination] = await strapi.db.query(relationName).findMany({ where });
+
+  if (!nomination) {
+    nomination = await strapi.db.query(relationName).create({ data: { ...data, publishedAt } });
+  } else {
+    nomination = await strapi.db.query(relationName).update({ where, data: { ...data, publishedAt } });
+  }
+
+  return nomination;
 };
 
 /**
