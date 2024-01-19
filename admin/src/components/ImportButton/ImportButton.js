@@ -8,7 +8,7 @@ import { pluginPermissions } from '../../permissions';
 import getTrad from '../../utils/getTrad';
 import { ImportModal } from '../ImportModal';
 
-const enabledCollections = ['candidate.candidate'];
+const enabledCollections = ['candidate.candidate', 'nomination.nomination'];
 
 export const ImportButton = ({ fullWidth = false }) => {
   const pathname = window.location.pathname;
