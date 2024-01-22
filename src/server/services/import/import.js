@@ -28,22 +28,32 @@ const importData = async (dataRaw, { slug, format, user, idField }) => {
   let data = await parseInputData(format, dataRaw, { slug });
   data = toArray(data);
 
+  let failures = [];
   let importFunction;
   if (slug === 'api::candidate.candidate') {
     importFunction = async (datum) => await createOrUpdateCandidate(datum, { slug });
   } else if (slug === 'api::nomination.nomination') {
     importFunction = async (datum) => await createOrUpdateNomination(datum, { slug });
   } else {
-    return { failures: ['Slug not supported'] };
+    failures.push('Slug not supported');
   }
 
   const results = [];
 
-  for (const datum of data) {
-    results.push(await importFunction(datum, { slug, user, idField }));
-  }
+  await strapi.db.transaction(async ({ rollback, commit }) => {
+    for (const datum of data) {
+      const result = await importFunction(datum, { slug, user, idField });
+      if (!result) {
+        await rollback();
+        failures.push('Error during import');
+        return;
+      }
+      results.push(result);
+    }
+    commit();
+  });
 
-  return { failures: [] };
+  return { failures, results };
 
   // Code from original implementation
   /*
