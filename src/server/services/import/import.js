@@ -36,16 +36,22 @@ const importData = async (dataRaw, { slug, format, user, idField }) => {
     importFunction = async (datum) => await createOrUpdateNomination(datum, { slug });
   } else {
     failures.push('Slug not supported');
+    return { failures };
   }
 
   const results = [];
 
   await strapi.db.transaction(async ({ rollback, commit }) => {
     for (const datum of data) {
-      const result = await importFunction(datum, { slug, user, idField });
+      let result;
+      try {
+        result = await importFunction(datum, { slug, user, idField });
+      } catch (err) {
+        strapi.log.error(err);
+      }
       if (!result) {
-        await rollback();
         failures.push('Error during import');
+        await rollback();
         return;
       }
       results.push(result);
@@ -53,6 +59,7 @@ const importData = async (dataRaw, { slug, format, user, idField }) => {
     commit();
   });
 
+  // TODO: Figure out the correct format of the response
   return { failures, results };
 
   // Code from original implementation
@@ -112,15 +119,23 @@ const importOtherSlug = async (data, { slug, user, idField }) => {
 
 const assertRequiredFields = (data, requiredFields) => {
   const keys = Object.keys(data);
-  if (requiredFields.some((key) => !keys.includes(key))) {
-    throw new Error('Missing required field');
+  const missingFields = [];
+
+  for (const field of requiredFields) {
+    if (!keys.includes(field)) {
+      missingFields.push(field);
+    }
+  }
+
+  if (missingFields.length > 0) {
+    throw new Error(`Missing required fields ${missingFields.join(', ')}`);
   }
 };
 
 const createOrUpdateCandidate = async (data, { slug: relationName }) => {
   assertRequiredFields(data, ['firstName', 'lastName', 'party', 'email', 'published']);
 
-  const publishedAt = data.published === 'true' ? new Date() : undefined;
+  const publishedAt = data.published.toLowerCase() === 'true' ? new Date() : undefined;
 
   const where = { email: data.email };
 
@@ -138,7 +153,7 @@ const createOrUpdateCandidate = async (data, { slug: relationName }) => {
 const createOrUpdateNomination = async (data, { slug: relationName }) => {
   assertRequiredFields(data, ['election', 'constituency', 'candidate', 'party', 'electionSymbol', 'published']);
 
-  const publishedAt = data.published === 'true' ? new Date() : undefined;
+  const publishedAt = data.published.toLowerCase() === 'true' ? new Date() : undefined;
 
   const where = {
     election: data.election,
