@@ -31,15 +31,21 @@ const importData = async (dataRaw, { slug, format, user, idField }) => {
   let failures = [];
   let importFunction;
   if (slug === 'api::candidate.candidate') {
+    const validationFailures = await validateCandidatesData(data);
+    if (validationFailures.length > 0) {
+      return { failures: validationFailures };
+    }
     importFunction = async (datum) => await createOrUpdateCandidate(datum, { slug });
   } else if (slug === 'api::nomination.nomination') {
+    const validationFailures = await validateNominationsData(data);
+    if (validationFailures.length > 0) {
+      return { failures: validationFailures };
+    }
     importFunction = async (datum) => await createOrUpdateNomination(datum, { slug });
   } else {
     failures.push('Slug not supported');
     return { failures };
   }
-
-  const results = [];
 
   await strapi.db.transaction(async ({ rollback, commit }) => {
     for (const datum of data) {
@@ -52,15 +58,13 @@ const importData = async (dataRaw, { slug, format, user, idField }) => {
       if (!result) {
         failures.push('Error during import');
         await rollback();
-        return;
+        return { failures };
       }
-      results.push(result);
     }
     commit();
   });
 
-  // TODO: Figure out the correct format of the response
-  return { failures, results };
+  return { failures };
 
   // Code from original implementation
   /*
@@ -117,24 +121,116 @@ const importOtherSlug = async (data, { slug, user, idField }) => {
   };
 };
 
-const assertRequiredFields = (data, requiredFields) => {
-  const keys = Object.keys(data);
-  const missingFields = [];
+/**
+ * This function returns human-readable list of failures in data validation.
+ *
+ * Following requirements are validated:
+ * - Each candidate has all the required fields (firstName, lastName, party, email, published)
+ * - Email fields are not empty
+ * - Emails are unique
+ * - Party ids are valid
+ */
+const validateCandidatesData = async (data) => {
+  const failures = [];
+  const requiredFields = ['firstName', 'lastName', 'party', 'email', 'published'];
+  const emails = [];
+  const parties = (await strapi.entityService.findMany('api::party.party')).map((party) => party.id);
 
-  for (const field of requiredFields) {
-    if (!keys.includes(field)) {
-      missingFields.push(field);
+  for (const [i, candidate] of data.entries()) {
+    const missingFields = [];
+    const fields = Object.keys(candidate);
+    for (const requiredField of requiredFields) {
+      if (!fields.includes(requiredField)) {
+        missingFields.push(requiredField);
+      }
+    }
+    if (missingFields.length > 0) {
+      failures.push(`Row ${i + 2} is missing required fields: ${missingFields.join(', ')}`);
+    }
+
+    if (candidate.email.length == 0) {
+      failures.push(`Row ${i + 2} is missing email`);
+    }
+
+    if (emails.includes(candidate.email)) {
+      failures.push(`Rows ${emails.indexOf(candidate.email) + 2} and ${i + 2} has same email`);
+    }
+
+    emails.push(candidate.email);
+
+    if (!parties.includes(candidate.party)) {
+      failures.push(`Row ${i + 2} has invalid party id`);
     }
   }
 
-  if (missingFields.length > 0) {
-    throw new Error(`Missing required fields ${missingFields.join(', ')}`);
+  return failures;
+};
+
+/**
+ * This function returns human-readable list of failures in data validation.
+ * - Each nomination has all the required fields (election, constituency, candidate, party, electionSymbol, published)
+ * - Emails are not empty
+ * - Every email is email of some candidate
+ * - Each combination of election, constituency, email and party is unique
+ * - Election, constituency and party ids are valid
+ *
+ * Id of candidate is added to the data because it is needed instead of email when importing.
+ */
+const validateNominationsData = async (data) => {
+  const failures = [];
+  const requiredFields = ['election', 'constituency', 'email', 'party', 'electionSymbol', 'published'];
+  const elections = (await strapi.entityService.findMany('api::election.election')).map((x) => x.id);
+  const constituencies = (await strapi.entityService.findMany('api::constituency.constituency')).map((x) => x.id);
+  const parties = (await strapi.entityService.findMany('api::party.party')).map((x) => x.id);
+  const nominationUIDs = [];
+
+  for (const [i, nomination] of data.entries()) {
+    const nominationUID = nomination?.email + ':' + nomination?.election + ':' + nomination?.constituency + ':' + nomination?.party;
+
+    const missingFields = [];
+    const fields = Object.keys(nomination);
+    for (const requiredField of requiredFields) {
+      if (!fields.includes(requiredField)) {
+        missingFields.push(requiredField);
+      }
+    }
+    if (missingFields.length > 0) {
+      failures.push(`Row ${i + 2} is missing required fields: ${missingFields.join(', ')}`);
+    }
+
+    if (nomination.email.length == 0) {
+      failures.push(`Row ${i + 2} is missing email`);
+    }
+
+    const candidate = (await strapi.entityService.findMany('api::candidate.candidate', { filters: { email: nomination.email } }))[0];
+    nomination.candidate = candidate;
+
+    if (!candidate) {
+      failures.push(`Row ${i + 2} has invalid email`);
+    }
+
+    if (!elections.includes(nomination.election)) {
+      failures.push(`Row ${i + 2} has invalid election id`);
+    }
+
+    if (!constituencies.includes(nomination.constituency)) {
+      failures.push(`Row ${i + 2} has invalid constituency id`);
+    }
+
+    if (!parties.includes(nomination.party)) {
+      failures.push(`Row ${i + 2} has invalid party id`);
+    }
+
+    if (nominationUIDs.includes(nominationUID)) {
+      failures.push(`Rows ${nominationUIDs.indexOf(nominationUID) + 2} and ${i + 2} has same email, election, constituency and party`);
+    }
+    nominationUIDs.push(nominationUID);
   }
+
+  return failures;
 };
 
 const createOrUpdateCandidate = async (data, { slug: relationName }) => {
-  assertRequiredFields(data, ['firstName', 'lastName', 'party', 'email', 'published']);
-
   const publishedAt = data.published.toLowerCase() === 'true' ? new Date() : undefined;
 
   const where = { email: data.email };
@@ -151,8 +247,6 @@ const createOrUpdateCandidate = async (data, { slug: relationName }) => {
 };
 
 const createOrUpdateNomination = async (data, { slug: relationName }) => {
-  assertRequiredFields(data, ['election', 'constituency', 'candidate', 'party', 'electionSymbol', 'published']);
-
   const publishedAt = data.published.toLowerCase() === 'true' ? new Date() : undefined;
 
   const where = {

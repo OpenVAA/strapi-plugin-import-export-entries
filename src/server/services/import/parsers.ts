@@ -45,7 +45,8 @@ async function parseCsv(dataRaw: string, { slug }: { slug: SchemaUID }) {
       try {
         datum[name] = JSON.parse(datum[name]);
       } catch (err) {
-        strapi.log.error(err);
+        // This error logging is not relevant to us because we don't import all fields
+        //strapi.log.error(err);
       }
     }
     return datum;
