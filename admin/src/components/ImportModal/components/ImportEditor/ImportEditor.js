@@ -26,25 +26,28 @@ export const ImportEditor = ({ file, data, dataFormat, slug, onDataChanged, onOp
 
   return (
     <>
+      {/*
       <TabGroup label="Import editor" variant="simple">
         <Tabs>
           <Tab>{i18n('plugin.import.tab.file')}</Tab>
           <Tab>{i18n('plugin.import.tab.options')}</Tab>
         </Tabs>
 
-        <TabPanels>
+      <TabPanels>
           <TabPanel>
-            <Box style={{ display: 'flex', flexDirection: 'column', gap: 8 }} color="neutral800" paddingTop={4} paddingBottom={4} background="neutral0">
-              {file?.name && (
-                <Box style={{ display: 'flex', gap: 8 }} paddingTop={2} paddingBottom={2}>
-                  <Typography fontWeight="bold" as="p">
-                    {i18n('plugin.import.file-name')} :
-                  </Typography>
-                  <Typography as="p">{file.name}</Typography>
-                </Box>
-              )}
-              <Editor content={data} language={dataFormat} onChange={onDataChanged} />
-            </Box>
+      */}
+      <Box style={{ display: 'flex', flexDirection: 'column', gap: 8 }} color="neutral800" paddingTop={4} paddingBottom={4} background="neutral0">
+        {file?.name && (
+          <Box style={{ display: 'flex', gap: 8 }} paddingTop={2} paddingBottom={2}>
+            <Typography fontWeight="bold" as="p">
+              {i18n('plugin.import.file-name')} :
+            </Typography>
+            <Typography as="p">{file.name}</Typography>
+          </Box>
+        )}
+        <Editor content={data} language={dataFormat} onChange={onDataChanged} />
+      </Box>
+      {/*
           </TabPanel>
           <TabPanel>
             <Box color="neutral800" paddingTop={4} paddingBottom={4} background="neutral0">
@@ -65,6 +68,7 @@ export const ImportEditor = ({ file, data, dataFormat, slug, onDataChanged, onOp
           </TabPanel>
         </TabPanels>
       </TabGroup>
+      */}
     </>
   );
 };
